@@ -148,11 +148,22 @@ class Model(Generic[T]):
             term in the current model under the given assignment of values to
             variable names.
         """
+
         assert term.constants().issubset(self.constant_interpretations.keys())
         assert term.variables().issubset(assignment.keys())
         for function, arity in term.functions():
             assert function in self.function_interpretations and self.function_arities[function] == arity
-        # Task 7.7
+
+        if is_constant(term.root):
+            return self.constant_interpretations[term.root]
+        elif is_variable(term.root):
+            return assignment[term.root]
+        elif is_function(term.root):
+            args = []
+            for ind in range(len(term.arguments)):
+                args.append(self.evaluate_term(term.arguments[ind], assignment))
+            args = tuple(args)
+            return self.function_interpretations[term.root][args]
 
     def evaluate_formula(self, formula: Formula, assignment: Mapping[str, T] = frozendict()) -> bool:
         """Calculates the truth value of the given formula in the current model
@@ -177,7 +188,43 @@ class Model(Generic[T]):
             assert function in self.function_interpretations and self.function_arities[function] == arity
         for relation, arity in formula.relations():
             assert relation in self.relation_interpretations and self.relation_arities[relation] in {-1, arity}
-        # Task 7.8
+
+        if is_equality(formula.root):
+            return self.evaluate_term(formula.arguments[0], assignment) == self.evaluate_term(formula.arguments[1], assignment)
+        elif is_relation(formula.root):
+            args = []
+            for ind in range(len(formula.arguments)):
+                args.append(self.evaluate_term(formula.arguments[ind], assignment))
+            args = tuple(args)
+            return args in self.relation_interpretations[formula.root]
+        elif is_unary(formula.root):
+            return not(self.evaluate_formula(formula.first, assignment))
+        elif is_binary(formula.root):
+            if formula.root == '&':
+                return self.evaluate_formula(formula.first, assignment) and self.evaluate_formula(formula.second, assignment)
+            elif formula.root == '|':
+                return self.evaluate_formula(formula.first, assignment) or self.evaluate_formula(formula.second, assignment)
+            elif formula.root == '->':
+                return not(self.evaluate_formula(formula.first, assignment)) or self.evaluate_formula(formula.second, assignment)
+        elif is_quantifier(formula.root):
+            if formula.root == 'A':
+                ph = True
+                for val in self.universe:
+                    assignment0 = dict(assignment)
+                    assignment0[formula.variable] = val
+                    if not self.evaluate_formula(formula.statement, assignment0):
+                        ph = False
+                        break
+                return ph
+            elif formula.root == 'E':
+                ph = False
+                for val in self.universe:
+                    assignment0 = dict(assignment)
+                    assignment0[formula.variable] = val
+                    if self.evaluate_formula(formula.statement, assignment0):
+                        ph = True
+                        break
+                return ph
 
     def is_model_of(self, formulas: AbstractSet[Formula]) -> bool:
         """Checks if the current model is a model of the given formulas.
@@ -198,4 +245,11 @@ class Model(Generic[T]):
                 assert function in self.function_interpretations and self.function_arities[function] == arity
             for relation, arity in formula.relations():
                 assert relation in self.relation_interpretations and self.relation_arities[relation] in {-1, arity}
-        # Task 7.9
+
+            formula0 = formula
+            for var in formula.free_variables():
+                formula0 = Formula.parse('A' + var + '[' + str(formula0) + ']')
+            if self.evaluate_formula(formula0) == False:
+                return False
+
+        return True
